@@ -44,12 +44,12 @@ public:
 	bool Initialize(TwoWire &bus = Wire);
 	bool Initialize(device_t device, TwoWire &bus = Wire);
 
-	void GetTime(time_t *time);
 	void GetTime(tm *time);
+	void GetTime(time_t *time);
 	void SetTime(tm *time);
+	void SetTime(time_t *time);
+	void SetSQW(freq_t f) const;
 	bool GetClock(tm *time, timeFunc_t func); // TODO: Make it better
-
-	bool IsLeapYear();
 
 private:
 	const uint8_t deviceAddresses[3] = {0x68, 0x6F, 0x51};
@@ -58,11 +58,14 @@ private:
 	device_t device;
 	TwoWire *wire;
 
+	bool configure(device_t device_type);
 	bool checkDevice(device_t dev);
 	uint8_t getRegister(timeFunc_t func) const;
 	void readMCPTimeSaver(struct tm *tm, uint8_t reg) const;
-	void stopClock(void) const;
-	void startClock(void) const;
+	void resetClock() const;
+	void stopClock() const;
+	void startClock() const;
+	void enableBatteryBackup(bool enable) const;
 
 	void read(uint8_t _register, uint8_t length, uint8_t *values);
 	uint8_t read(uint8_t _register);

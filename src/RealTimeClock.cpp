@@ -5,33 +5,43 @@ bool RealTimeClock::Initialize(device_t device_type, TwoWire &bus)
 {
   wire = &bus;
 
-  return checkDevice(device_type);
+  return configure(device_type);
 }
 
 bool RealTimeClock::Initialize(TwoWire &bus)
 {
   wire = &bus;
-  if (checkDevice(device_t::DS13xx))
+  if (configure(device_t::DS13xx))
     return true;
 
-  if (checkDevice(device_t::MCP7941x))
+  if (configure(device_t::MCP7941x))
     return true;
 
-  if (checkDevice(device_t::PCF85263))
+  if (configure(device_t::PCF85263))
     return true;
 
   return false;
+}
+
+void RealTimeClock::SetTime(time_t *time)
+{
+  tm time_tm = localtime(time);
+  SetTime(time_tm);
 }
 
 void RealTimeClock::SetTime(tm *time)
 {
   uint8_t clockHalt = 0;
   uint8_t osconEtc = 0;
+
   switch (device)
   {
   case device_t::PCF85263:
-    uint8_t settings[4] = {0x2E, 0x01, 0xA4, 0x00};
-    writeBlock(address, 4, settings);
+    uint8_t settings[3] = {0x01, 0xA4, 0x00};
+    writeBlock(0x2E, 3, settings);
+    // 0x2e Stop the clock
+    // 0x2f STOP
+    // Clear hundredths of seconds
     break;
 
   case device_t::DS13xx:
@@ -48,6 +58,7 @@ void RealTimeClock::SetTime(tm *time)
     return;
   }
 
+  uint8_t reg = getRegister(timeFunc_t::TIME);
   uint8_t values[7];
 
   values[0] = uint2bcd(time->tm_sec) | clockHalt;
@@ -58,10 +69,11 @@ void RealTimeClock::SetTime(tm *time)
   values[5] = uint2bcd(time->tm_mon + 1);
   values[6] = uint2bcd(time->tm_year % 100);
 
-  writeBlock(address, 7, values);
+  writeBlock(reg, 7, values);
 
   startClock();
 }
+
 void RealTimeClock::GetTime(time_t *time)
 {
   tm time_tm = tm();
@@ -132,7 +144,42 @@ bool RealTimeClock::GetClock(tm *time, timeFunc_t func)
 }
 
 // Private methods
-void RealTimeClock::startClock(void) const
+
+bool RealTimeClock::configure(device_t device_type)
+{
+  if (!checkDevice(device_type))
+    return false;
+
+  switch (device)
+  {
+  case device_t::PCF85263:
+    uint8_t values[8] = {0x00, 0x00, 0x12, 0x00, 0x00, 0x07, 0x00, 0x00};
+    writeBlock(0x23, 8, values);
+    break;
+
+  case device_t::MCP7941x:
+    enableBatteryBackup();
+    write(0x08, 0x00);
+    break;
+
+  case device_t::DS13xx:
+    // do nothing
+    break;
+  default:
+    return;
+  }
+  startClock();
+
+  return true;
+}
+
+bool RealTimeClock::resetClock()
+{
+  if (device == device_t::PCF85263)
+    write(0x2F, 0x2C);
+}
+
+void RealTimeClock::startClock() const
 {
   switch (device)
   {
@@ -157,7 +204,7 @@ void RealTimeClock::startClock(void) const
   }
 }
 
-void RealTimeClock::stopClock(void) const
+void RealTimeClock::stopClock() const
 {
   switch (device)
   {
@@ -178,6 +225,22 @@ void RealTimeClock::stopClock(void) const
   default:
     break;
   }
+}
+
+void RealTimeClock::enableBatteryBackup(bool enable) const
+{
+  if (device != device_t::MCP7941x)
+    return;
+
+  uint8_t data = read(0x03);
+  if (bool(data & 0x08) == enable)
+    return;
+
+  stopClock();
+
+  data = enable ? d | 0x08 : d & 0xF7;
+  write(0x03, data);
+  startClock();
 }
 
 uint8_t RealTimeClock::getRegister(timeFunc_t func) const
